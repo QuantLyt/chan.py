@@ -116,39 +116,73 @@ def export_zs_data(chan):
 
 
 def export_bs_point_data(chan):
-    """導出買賣點數據"""
-    bs_data = []
+    """導出買賣點數據，按照時間排序並分開不同級別顯示"""
+    # 按級別收集買賣點數據
+    bs_data_by_level = {}
+    
     for kl_idx, kl_list in enumerate(chan.kl_datas.values()):
         lv = chan.lv_list[kl_idx]
+        level_name = lv.name
+        
+        if level_name not in bs_data_by_level:
+            bs_data_by_level[level_name] = []
         
         # 筆買賣點
         for bs_point in kl_list.bs_point_lst.bsp_iter():
-            bs_data.append({
-                'level': lv.name,
+            bs_data_by_level[level_name].append({
+                'level': level_name,
                 'type': '筆買賣點',
                 'bs_type': bs_point.type2str(),
-                'is_buy': bs_point.is_buy,
+                'is_buy': '買入' if bs_point.is_buy else '賣出',
                 'time': bs_point.klu.time.to_str(),
                 'price': bs_point.klu.low if bs_point.is_buy else bs_point.klu.high
             })
         
         # 段買賣點
         for seg_bs_point in kl_list.seg_bs_point_lst.bsp_iter():
-            bs_data.append({
-                'level': lv.name,
+            bs_data_by_level[level_name].append({
+                'level': level_name,
                 'type': '段買賣點',
                 'bs_type': seg_bs_point.type2str(),
-                'is_buy': seg_bs_point.is_buy,
+                'is_buy': '買入' if seg_bs_point.is_buy else '賣出',
                 'time': seg_bs_point.klu.time.to_str(),
                 'price': seg_bs_point.klu.low if seg_bs_point.is_buy else seg_bs_point.klu.high
             })
     
-    if bs_data:
-        print("\n=== 買賣點數據 ===")
-        df = pd.DataFrame(bs_data)
-        print(df.to_string())
-    else:
+    # 檢查是否有買賣點數據
+    has_data = False
+    for level_name, data in bs_data_by_level.items():
+        if data:
+            has_data = True
+            break
+    
+    if not has_data:
         print("\n沒有找到買賣點數據")
+        return
+    
+    # 按級別顯示買賣點數據，並按時間排序
+    print("\n=== 買賣點數據 ===")
+    for level_name, data in bs_data_by_level.items():
+        if data:
+            print(f"\n--- {level_name} 級別買賣點 ---")
+            df = pd.DataFrame(data)
+            # 按時間排序，考慮不同格式的日期
+            def parse_time(time_str):
+                # 先嘗試日期格式 YYYY/MM/DD
+                try:
+                    return pd.to_datetime(time_str, format='%Y/%m/%d')
+                except ValueError:
+                    # 如果失敗，嘗試帶時間的格式 YYYY/MM/DD HH:MM
+                    try:
+                        return pd.to_datetime(time_str, format='%Y/%m/%d %H:%M')
+                    except ValueError:
+                        # 如果仍然失敗，使用更寬魅的解析
+                        return pd.to_datetime(time_str)
+            
+            df['time_sort'] = df['time'].apply(parse_time)
+            df = df.sort_values(by='time_sort')
+            df = df.drop(columns=['time_sort'])
+            print(df.to_string(index=False))
 
 
 def export_all_data(code, begin_time, end_time, data_src, lv_list):
